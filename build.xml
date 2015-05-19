@@ -38,7 +38,7 @@
 
 	<target name="jar" depends="compile">
 		<jar destfile="${target}/java-bells-no-deps.jar" basedir="${build}" includes="**" />
-		<jar destfile="${target}/java-bells-with-deps.jar">
+		<!-- <jar destfile="${target}/java-bells-with-deps.jar">
 			<fileset dir="${build}"/>
 			<restrict>
 				<archives>
@@ -50,7 +50,7 @@
 			<not><name name="META-INF/*.DSA" /></not>
 			<not><name name="META-INF/*.RSA" /></not>
 			</restrict>
-		</jar>
+		</jar -->
 	</target>
 
 	<target name="testanswer" depends="compile">

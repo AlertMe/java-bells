@@ -1,24 +1,21 @@
-# eclipse files
-.classpath
+build
+out
+target
 .project
+.cproject
+.classpath
 .settings
-
-#vi(m) swap files
-*.swp
-
-*.class
-
-# Package Files #
-#*.jar
-*.war
-*.ear
-
-# jmf log
-jmf.log
-
-#ignore build products
-/build
-/target
-
-#individual users should not commit their passwords. They should use the template and copy it to the passwords file.
-passwords.props
+.checkstyle
+.pmd*
+.metadata
+.idea
+*.iml
+*.ipr
+*.iws
+*.ids
+*.a
+*.d
+*.o
+*.gc*
+*.lo
+*~
