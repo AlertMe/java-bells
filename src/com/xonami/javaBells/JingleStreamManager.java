@@ -1,19 +1,9 @@
 package com.xonami.javaBells;
 
-import java.io.IOException;
-import java.net.DatagramSocket;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
-
 import ch.imvs.sdes4j.srtp.SrtpCryptoAttribute;
 import net.java.sip.communicator.impl.protocol.jabber.extensions.jingle.*;
 import net.java.sip.communicator.impl.protocol.jabber.extensions.jingle.ContentPacketExtension.CreatorEnum;
 import net.java.sip.communicator.impl.protocol.jabber.extensions.jingle.ContentPacketExtension.SendersEnum;
-
 import org.ice4j.TransportAddress;
 import org.ice4j.ice.CandidatePair;
 import org.ice4j.ice.Component;
@@ -23,6 +13,11 @@ import org.jitsi.service.neomedia.*;
 import org.jitsi.service.neomedia.device.MediaDevice;
 import org.jitsi.service.neomedia.format.AudioMediaFormat;
 import org.jitsi.service.neomedia.format.MediaFormat;
+
+import java.io.IOException;
+import java.net.DatagramSocket;
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class JingleStreamManager {
 	private static final DynamicPayloadTypeRegistry dynamicPayloadTypes = new DynamicPayloadTypeRegistry();
@@ -35,6 +30,7 @@ public class JingleStreamManager {
 	private final Map<String,MediaFormat> streamNameToMediaFormats = new ConcurrentHashMap<String,MediaFormat>();
 	private final Map<String,Byte> streamNameToPayloadTypeId = new ConcurrentHashMap<String,Byte>();
     private final Map<String, SDesControl> streamNameToSDesControl = new ConcurrentHashMap<String, SDesControl>();
+    private final Map<String, Boolean> streamNameToRtcpMux = new ConcurrentHashMap<String, Boolean>();
 
 	public JingleStreamManager(CreatorEnum creator) {
 		this.creator = creator;
@@ -72,7 +68,11 @@ public class JingleStreamManager {
 		return contentList;
 	}
 
-	private ContentPacketExtension createContentPacketExtention(SendersEnum senders, String name, MediaDevice dev, MediaFormat fmt, int payloadId ) {
+    private ContentPacketExtension createContentPacketExtention(SendersEnum senders, String name, MediaDevice dev, MediaFormat fmt, int payloadId ) {
+        return createContentPacketExtention(senders, name , dev, fmt, payloadId, false);
+    }
+
+	private ContentPacketExtension createContentPacketExtention(SendersEnum senders, String name, MediaDevice dev, MediaFormat fmt, int payloadId, boolean rtcpMux ) {
 		this.senders = senders;
 		ContentPacketExtension content = new ContentPacketExtension();
 		RtpDescriptionPacketExtension description = new RtpDescriptionPacketExtension();
@@ -97,6 +97,10 @@ public class JingleStreamManager {
 			description.addPayloadType(formatToPayloadType(fmt, dynamicPayloadTypes, payloadId));
 		}
 
+        if (rtcpMux) {
+            description.addChildExtension(new RtcpMuxExtension());
+        }
+
 		return content;
 	}
 
@@ -112,28 +116,40 @@ public class JingleStreamManager {
         Byte payloadTypeId = streamNameToPayloadTypeId.get(name);
         if( stream == null || format == null || payloadTypeId == null )
         	throw new IOException("Stream \"" + name + "\" not found.");
-        Component rtpComponent = stream.getComponent(org.ice4j.ice.Component.RTP);
-        Component rtcpComponent = stream.getComponent(org.ice4j.ice.Component.RTCP);
 
-        if( rtpComponent == null )
-        	throw new IOException("RTP component not found.");
-        if( rtcpComponent == null )
-        	throw new IOException("RTCP Component not found.");
+        Component rtpComponent = stream.getComponent(org.ice4j.ice.Component.RTP);
+
+        if (rtpComponent == null)
+            throw new IOException("RTP component not found.");
 
         CandidatePair rtpPair = rtpComponent.getSelectedPair();
-        CandidatePair rtcpPair = rtcpComponent.getSelectedPair();
 
-//        System.out.println( "RTP : L " + rtpPair.getLocalCandidate().getDatagramSocket().getLocalPort() + " <-> " + rtpPair.getRemoteCandidate().getTransportAddress() + " R " );
-//        System.out.println( "RTCP: L " + rtcpPair.getLocalCandidate().getDatagramSocket().getLocalPort() + " <-> " + rtcpPair.getRemoteCandidate().getTransportAddress() + " R " );
+        if (streamNameToRtcpMux.get(name)) {
+            return startStream(name,
+                    payloadTypeId,
+                    format,
+                    rtpPair.getRemoteCandidate().getTransportAddress(),
+                    null,
+                    rtpPair.getLocalCandidate().getDatagramSocket(),
+                    null);
 
-        return startStream( name,
-        		payloadTypeId,
-        		format,
-        		rtpPair.getRemoteCandidate().getTransportAddress(),
-        		rtcpPair.getRemoteCandidate().getTransportAddress(),
-        		rtpPair.getLocalCandidate().getDatagramSocket(),
-        		rtcpPair.getLocalCandidate().getDatagramSocket());
-	}
+        } else {
+            Component rtcpComponent = stream.getComponent(org.ice4j.ice.Component.RTCP);
+
+            if (rtcpComponent == null)
+                throw new IOException("RTCP Component not found.");
+
+            CandidatePair rtcpPair = rtcpComponent.getSelectedPair();
+
+            return startStream(name,
+                    payloadTypeId,
+                    format,
+                    rtpPair.getRemoteCandidate().getTransportAddress(),
+                    rtcpPair.getRemoteCandidate().getTransportAddress(),
+                    rtpPair.getLocalCandidate().getDatagramSocket(),
+                    rtcpPair.getLocalCandidate().getDatagramSocket());
+        }
+    }
 
 	public JingleStream startStream( String name, byte payloadTypeId, MediaFormat format, TransportAddress remoteRtpAddress, TransportAddress remoteRtcpAddress, DatagramSocket rtpDatagramSocket, DatagramSocket rtcpDatagramSocket ) throws IOException {
 		MediaDevice dev = devices.get(name);
@@ -141,7 +157,7 @@ public class JingleStreamManager {
 		MediaService mediaService = LibJitsi.getMediaService();
 
         MediaStream mediaStream = mediaService.createMediaStream(
-                new DefaultStreamConnector(rtpDatagramSocket, rtcpDatagramSocket), dev,
+                new DefaultStreamConnector(rtpDatagramSocket, rtcpDatagramSocket, streamNameToRtcpMux.get(name)), dev,
                 streamNameToSDesControl.get(name));
 
         mediaStream.setDirection(MediaDirection.SENDONLY);
@@ -273,15 +289,18 @@ public class JingleStreamManager {
                                 MediaFormat mf = getSupportedFormat(name, payloadType);
                                 if (mf == null)
                                     continue; //no match
+                                final boolean rtcpMux = !description.getChildExtensionsOfType
+                                        (RtcpMuxExtension.class).isEmpty();
                                 final ContentPacketExtension cpeResponse =
                                         createContentPacketExtention(senders, name, devices.get(name), mf,
-                                                payloadType.getID());
+                                                payloadType.getID(), rtcpMux);
                                 addEncryption(name, description,
                                         (RtpDescriptionPacketExtension) cpeResponse.getChildExtensions().get(0));
                                 ret.add(cpeResponse);
                                 toclean = null;
                                 streamNameToMediaFormats.put(name, mf);
                                 streamNameToPayloadTypeId.put(name, (byte) payloadType.getID());
+                                streamNameToRtcpMux.put(name, rtcpMux);
                                 break; //stop on first match
                             }
                         }
@@ -349,5 +368,9 @@ public class JingleStreamManager {
             }
         }
         return response;
+    }
+
+    public Map<String, Boolean> getStreamNameToRtcpMux() {
+        return new HashMap<String, Boolean>(streamNameToRtcpMux);
     }
 }

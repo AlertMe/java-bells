@@ -1,5 +1,14 @@
 package com.xonami.javaBells;
 
+import net.java.sip.communicator.impl.protocol.jabber.extensions.jingle.*;
+import net.java.sip.communicator.impl.protocol.jabber.extensions.jingle.CandidateType;
+import org.ice4j.Transport;
+import org.ice4j.TransportAddress;
+import org.ice4j.ice.*;
+import org.ice4j.ice.harvest.StunCandidateHarvester;
+import org.ice4j.ice.harvest.TurnCandidateHarvester;
+import org.ice4j.security.LongTermCredential;
+
 import java.beans.PropertyChangeListener;
 import java.io.IOException;
 import java.net.BindException;
@@ -10,24 +19,6 @@ import java.security.SecureRandom;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
-
-import net.java.sip.communicator.impl.protocol.jabber.extensions.jingle.CandidatePacketExtension;
-import net.java.sip.communicator.impl.protocol.jabber.extensions.jingle.CandidateType;
-import net.java.sip.communicator.impl.protocol.jabber.extensions.jingle.ContentPacketExtension;
-import net.java.sip.communicator.impl.protocol.jabber.extensions.jingle.IceUdpTransportPacketExtension;
-import net.java.sip.communicator.impl.protocol.jabber.extensions.jingle.JingleIQ;
-import org.ice4j.Transport;
-import org.ice4j.TransportAddress;
-import org.ice4j.ice.Agent;
-import org.ice4j.ice.Candidate;
-import org.ice4j.ice.Component;
-import org.ice4j.ice.IceMediaStream;
-import org.ice4j.ice.IceProcessingState;
-import org.ice4j.ice.NominationStrategy;
-import org.ice4j.ice.RemoteCandidate;
-import org.ice4j.ice.harvest.StunCandidateHarvester;
-import org.ice4j.ice.harvest.TurnCandidateHarvester;
-import org.ice4j.security.LongTermCredential;
 //import org.ice4j.security.LongTermCredential;
 
 
@@ -256,10 +247,16 @@ public class IceAgent {
 	}
 
 	public void createStream( String name ) throws BindException, IllegalArgumentException, IOException {
+		createStream(name, false);
+	}
+
+	public void createStream( String name, boolean rtcpMux ) throws BindException, IllegalArgumentException, IOException {
 		IceMediaStream stream = agent.createMediaStream(name);
 		int rtpPort = getStreamPort();
 		agent.createComponent(stream, Transport.UDP, rtpPort, rtpPort, rtpPort+100);
-		agent.createComponent(stream, Transport.UDP, rtpPort+1, rtpPort+1, rtpPort+101);
+		if (!rtcpMux) {
+			agent.createComponent(stream, Transport.UDP, rtpPort + 1, rtpPort + 1, rtpPort + 101);
+		}
 	}
 
 	private static int getStreamPort() {
